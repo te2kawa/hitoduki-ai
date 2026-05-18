@@ -1,20 +1,11 @@
-const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
-const MODEL = 'claude-sonnet-4-20250514';
+const API_ENDPOINT = '/api/claude';
 
 async function callClaude(systemPrompt: string, userMessage: string): Promise<string> {
-  if (!API_KEY) {
-    throw new Error('APIキーが設定されていません。.envファイルにVITE_ANTHROPIC_API_KEYを設定してください。');
-  }
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(API_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
@@ -27,12 +18,10 @@ async function callClaude(systemPrompt: string, userMessage: string): Promise<st
   }
 
   const data = await response.json();
-  const text = data.content?.[0]?.text || '';
-  return text;
+  return data.content?.[0]?.text || '';
 }
 
 function parseJSON<T>(text: string): T {
-  // Remove markdown code fences if present
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   return JSON.parse(clean);
 }
@@ -84,25 +73,22 @@ export async function analyzeSelf(systemPrompt: string, userPrompt: string) {
 }
 
 export async function chatWithAI(systemPrompt: string, messages: { role: 'user' | 'assistant'; content: string }[]) {
-  if (!API_KEY) throw new Error('APIキーが設定されていません。');
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(API_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       system: systemPrompt,
       messages,
     }),
   });
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(`API エラー: ${response.status} ${error.error?.message || response.statusText}`);
   }
+
   const data = await response.json();
   return data.content?.[0]?.text || '';
 }
