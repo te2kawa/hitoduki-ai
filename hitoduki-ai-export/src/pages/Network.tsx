@@ -18,14 +18,14 @@ function calcCompatibility(a: Member, b: Member): { score: number; complementary
   let complementary = 0;
   let factors = 0;
 
-  const aProfile = a.aiInferred || {};
-  const bProfile = b.aiInferred || {};
+  // aiInferred を優先してフォールバック
+  const aEnn = a.enneagram?.type || a.aiInferred?.enneagram?.type;
+  const bEnn = b.enneagram?.type || b.aiInferred?.enneagram?.type;
+  const aMbti = (a.mbti?.type || a.aiInferred?.mbti?.type || '').toUpperCase();
+  const bMbti = (b.mbti?.type || b.aiInferred?.mbti?.type || '').toUpperCase();
 
   // エニアグラムベースの相性
-  const aEnn = a.enneagram?.type || aProfile.enneagram?.type;
-  const bEnn = b.enneagram?.type || bProfile.enneagram?.type;
-  if (aEnn && bEnn) {
-    // 同タイプ・隣接タイプは相性良し、対角は補完関係
+  if (aEnn && bEnn && !a.enneagram?.unknown && !b.enneagram?.unknown) {
     const diff = Math.min(Math.abs(aEnn - bEnn), 9 - Math.abs(aEnn - bEnn));
     if (diff <= 1) score += 0.6;
     else if (diff === 4 || diff === 5) { complementary += 0.7; score -= 0.2; }
@@ -34,9 +34,7 @@ function calcCompatibility(a: Member, b: Member): { score: number; complementary
   }
 
   // MBTIベースの相性
-  const aMbti = a.mbti?.type || aProfile.mbti?.type || '';
-  const bMbti = b.mbti?.type || bProfile.mbti?.type || '';
-  if (aMbti && bMbti && aMbti.length === 4 && bMbti.length === 4) {
+  if (aMbti && bMbti && aMbti.length === 4 && bMbti.length === 4 && !a.mbti?.unknown && !b.mbti?.unknown) {
     let matches = 0;
     let diffs = 0;
     for (let i = 0; i < 4; i++) {
@@ -62,7 +60,24 @@ function calcCompatibility(a: Member, b: Member): { score: number; complementary
     factors++;
   }
 
-  if (factors === 0) return { score: 0, complementary: 0, label: '情報不足' };
+  // 関係性・役割からの補完推定
+  if (a.relationship && b.relationship) {
+    const dominant = ['上司', 'リーダー', 'マネージャー'];
+    const aIsDominant = dominant.includes(a.role ?? '') || dominant.includes(a.relationship ?? '');
+    const bIsDominant = dominant.includes(b.role ?? '') || dominant.includes(b.relationship ?? '');
+    if (aIsDominant !== bIsDominant) { complementary += 0.2; factors++; }
+  }
+
+  // フリーテキストのみ（AI分析前）でもノードを表示する
+  // factorsが0でもfreeTextがあれば「分析待ち」として中立で表示
+  if (factors === 0) {
+    const hasFreeText = !!(a.freeText || b.freeText);
+    const hasAnyInfo = !!(aEnn || bEnn || aMbti || bMbti);
+    if (hasFreeText || hasAnyInfo) {
+      return { score: 0, complementary: 0, label: '分析待ち' };
+    }
+    return { score: 0, complementary: 0, label: '情報不足' };
+  }
 
   score = score / Math.max(factors * 0.5, 1);
   complementary = complementary / Math.max(factors * 0.5, 1);
@@ -91,11 +106,12 @@ function calcDistance(score: number, complementary: number, baseRadius: number):
 
 // エッジカラー
 function edgeColor(compat: { score: number; complementary: number; label: string }): string {
-  if (compat.label === '相性◎') return '#22c55e'; // 緑
-  if (compat.label === '相性○') return '#86efac'; // 薄緑
-  if (compat.label === '補完関係') return '#3b82f6'; // 青
-  if (compat.label === '相性△') return '#ef4444'; // 赤
-  return '#d1d5db'; // グレー
+  if (compat.label === '相性◎') return '#22c55e';
+  if (compat.label === '相性○') return '#86efac';
+  if (compat.label === '補完関係') return '#3b82f6';
+  if (compat.label === '相性△') return '#ef4444';
+  if (compat.label === '分析待ち') return '#a78bfa'; // 紫：AI分析を促す
+  return '#d1d5db';
 }
 
 export default function Network() {
@@ -238,6 +254,7 @@ export default function Network() {
           { color: '#86efac', label: '相性○' },
           { color: '#3b82f6', label: '補完関係（互いを活かし合える）' },
           { color: '#ef4444', label: '相性△（摩擦が生じやすい）' },
+          { color: '#a78bfa', label: '分析待ち（AI分析で確定）' },
         ].map(item => (
           <span key={item.label} className="flex items-center gap-1.5">
             <span className="w-4 h-0.5 inline-block rounded" style={{ background: item.color, height: 3 }} />

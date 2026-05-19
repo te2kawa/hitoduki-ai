@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useMember, useSelfProfile, updateMember, deleteMember, useMemberChatMessages, addMemberChatMessage, clearMemberChatMessages } from '../db/hooks';
 import { analyzeMemember, chatWithAI } from '../api/claude';
 import { buildMemberAnalysisSystemPrompt, buildMemberAnalysisUserPrompt, buildMemberChatSystemPrompt } from '../api/prompts';
-import type { MemberChatMessage } from '../types';
+import { MBTI_OPTIONS, MBTI_GROUPS } from '../constants/mbti';
+import { ENNEAGRAM_TYPES } from '../constants/enneagram';
+import type { MemberChatMessage, MemberIndicatorModes } from '../types';
 
 // ===== チャットコンポーネント =====
 function MemberChat({ memberId }: { memberId: string }) {
@@ -150,6 +152,10 @@ export default function MemberDetail() {
   const [freeText, setFreeText] = useState('');
   const [editingFreeText, setEditingFreeText] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'chat'>('profile');
+  const [editingTypes, setEditingTypes] = useState(false);
+  const [editEnneagramType, setEditEnneagramType] = useState<number | ''>('');
+  const [editMbtiType, setEditMbtiType] = useState('');
+  const [editIndicatorModes, setEditIndicatorModes] = useState<MemberIndicatorModes>({ enneagram: 'unknown', mbti: 'unknown', bigfive: 'unknown' });
 
   if (!member) return (
     <div className="p-6 text-center text-gray-500">
@@ -159,6 +165,32 @@ export default function MemberDetail() {
   );
 
   const result = member.aiInferred;
+
+  function startEditingTypes() {
+    setEditEnneagramType(member!.enneagram?.type && !member!.enneagram?.unknown ? member!.enneagram.type : '');
+    setEditMbtiType(member!.mbti?.type && !member!.mbti?.unknown ? member!.mbti.type : '');
+    setEditIndicatorModes({
+      enneagram: member!.enneagram?.unknown ? 'unknown' : member!.enneagram?.type ? 'manual' : 'unknown',
+      mbti: member!.mbti?.unknown ? 'unknown' : member!.mbti?.type ? 'manual' : 'unknown',
+      bigfive: member!.bigfive?.unknown ? 'unknown' : 'unknown',
+    });
+    setEditingTypes(true);
+  }
+
+  async function handleSaveTypes() {
+    const MBTI_OPTS = (await import('../constants/mbti')).MBTI_OPTIONS;
+    const selectedMBTI = MBTI_OPTS.find(o => o.type === editMbtiType);
+    await updateMember(id!, {
+      enneagram: editIndicatorModes.enneagram === 'manual' && editEnneagramType !== ''
+        ? { type: Number(editEnneagramType), unknown: false }
+        : { type: 0, unknown: true },
+      mbti: editIndicatorModes.mbti === 'manual' && editMbtiType
+        ? { type: editMbtiType, label: selectedMBTI?.label ?? '', unknown: false }
+        : { type: '', unknown: true },
+      indicatorModes: editIndicatorModes,
+    });
+    setEditingTypes(false);
+  }
 
   async function handleAnalyze() {
     if (!selfProfile) { setError('自己プロファイルを先に登録してください'); return; }
@@ -250,24 +282,109 @@ export default function MemberDetail() {
               )}
             </div>
 
-            {/* Type info */}
-            {(member.enneagram?.type || member.mbti?.type) && (
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <h2 className="font-semibold text-gray-800 mb-3">🧬 登録タイプ</h2>
+            {/* Type info - 編集可能 */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-800">🧬 登録タイプ</h2>
+                {!editingTypes && (
+                  <button onClick={startEditingTypes} className="text-sm text-indigo-600 hover:underline">編集</button>
+                )}
+              </div>
+
+              {editingTypes ? (
+                <div className="space-y-4">
+                  {/* エニアグラム */}
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-sm font-medium text-gray-700 w-28">エニアグラム</span>
+                      <div className="flex gap-1.5">
+                        {(['manual', 'unknown'] as const).map(m => (
+                          <button key={m} type="button"
+                            onClick={() => setEditIndicatorModes(prev => ({ ...prev, enneagram: m }))}
+                            className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                              editIndicatorModes.enneagram === m
+                                ? m === 'manual' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-500 text-white border-gray-500'
+                                : 'border-gray-300 text-gray-600'
+                            }`}>
+                            {m === 'manual' ? '手動入力' : '不明'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {editIndicatorModes.enneagram === 'manual' && (
+                      <select value={editEnneagramType} onChange={e => setEditEnneagramType(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">未設定</option>
+                        {ENNEAGRAM_TYPES.map(t => (
+                          <option key={t.type} value={t.type}>タイプ{t.type}（{t.name}）</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* MBTI */}
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-sm font-medium text-gray-700 w-28">MBTI</span>
+                      <div className="flex gap-1.5">
+                        {(['manual', 'unknown'] as const).map(m => (
+                          <button key={m} type="button"
+                            onClick={() => setEditIndicatorModes(prev => ({ ...prev, mbti: m }))}
+                            className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${
+                              editIndicatorModes.mbti === m
+                                ? m === 'manual' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-500 text-white border-gray-500'
+                                : 'border-gray-300 text-gray-600'
+                            }`}>
+                            {m === 'manual' ? '手動入力' : '不明'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {editIndicatorModes.mbti === 'manual' && (
+                      <select value={editMbtiType} onChange={e => setEditMbtiType(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">未設定</option>
+                        {MBTI_GROUPS.map(group => (
+                          <optgroup key={group} label={group}>
+                            {MBTI_OPTIONS.filter(o => o.group === group).map(o => (
+                              <option key={o.type} value={o.type}>{o.label}（{o.type}）</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={handleSaveTypes}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+                      保存
+                    </button>
+                    <button onClick={() => setEditingTypes(false)}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <div className="flex gap-3 flex-wrap">
-                  {member.enneagram?.type && !member.enneagram.unknown && (
+                  {member.enneagram?.type && !member.enneagram.unknown ? (
                     <span className="bg-purple-50 text-purple-700 px-3 py-1 rounded-full text-sm font-medium">
                       エニアグラム タイプ{member.enneagram.type}
                     </span>
+                  ) : (
+                    <span className="bg-gray-100 text-gray-400 px-3 py-1 rounded-full text-sm">エニアグラム：不明</span>
                   )}
-                  {member.mbti?.type && !member.mbti.unknown && (
+                  {member.mbti?.type && !member.mbti.unknown ? (
                     <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-sm font-medium">
                       {member.mbti.label}（{member.mbti.type}）
                     </span>
+                  ) : (
+                    <span className="bg-gray-100 text-gray-400 px-3 py-1 rounded-full text-sm">MBTI：不明</span>
                   )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Free text */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
