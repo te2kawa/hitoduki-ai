@@ -187,3 +187,48 @@ ${scoresDesc ? `- 各タイプスコア: ${scoresDesc}` : ''}
 5. 悪口や否定的な感情は、建設的な方向に転換することを助けること
 6. 日本語で応答すること`;
 }
+
+export function buildMemberChatSystemPrompt(
+  self: import('../types').SelfProfile,
+  member: import('../types').Member
+): string {
+  const selfDesc = `${self.mbti.unknown ? 'MBTI不明' : `${self.mbti.label}（${self.mbti.type}）`}、エニアグラム:${self.enneagram.unknown ? '不明' : `タイプ${self.enneagram.type}`}`;
+
+  const memberMbti = member.aiInferred?.mbti || member.mbti;
+  const memberEnn = member.enneagram;
+  const memberDesc = [
+    memberMbti?.type && !memberMbti?.unknown ? `MBTI:${memberMbti.label}（${memberMbti.type}）` : 'MBTI不明',
+    memberEnn?.type && !memberEnn?.unknown ? `エニアグラム:タイプ${memberEnn.type}` : 'エニアグラム不明',
+    member.relationship ? `関係:${member.relationship}` : '',
+    member.role ? `役割:${member.role}` : '',
+    member.motivation ? `モチベーション:${member.motivation}` : '',
+    member.decisionStyle ? `意思決定:${member.decisionStyle}` : '',
+  ].filter(Boolean).join(' / ');
+
+  const analysisDesc = member.aiInferred ? `
+【AI分析結果】
+強み: ${member.aiInferred.strengths?.join('、') || 'なし'}
+コミュニケーション: ${member.aiInferred.communication_advice || 'なし'}` : '';
+
+  return `あなたは人間関係とコミュニケーションの専門コーチです。
+
+【あなた（ユーザー）のプロファイル】
+${selfDesc}
+
+【相談相手のメンバー：${member.name}】
+${memberDesc}${analysisDesc}
+
+【コーチングの方針】
+1. この二者間の特性の違いや共通点を踏まえて具体的にアドバイスする
+2. 「${member.name}さんの${memberMbti?.type || 'この'}タイプは〇〇な傾向があるので...」のように、相手の特性を根拠に示す
+3. あなた（ユーザー）の特性も踏まえ「あなたは〇〇なので、△△のアプローチが合いやすい」と個別化する
+4. 会話例・具体的な言い回しを積極的に提示する
+5. ネガティブな状況も建設的な方向に転換する視点を忘れない
+6. 日本語で、温かく実践的に応答する
+
+【質問例への対応】
+- 1on1の進め方 → 相手のタイプに合った傾聴・質問スタイルを提案
+- 相手が落ち込んでいる → 相手の動機・価値観に沿った声かけを提案
+- 意見の対立 → 両者の思考スタイルの違いを踏まえた橋渡し方を提案
+- 依頼・お願い → 相手が動きやすいフレーミングを提案`;
+}

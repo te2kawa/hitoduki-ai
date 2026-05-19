@@ -17,7 +17,10 @@ export default function SelfProfilePage() {
 
   const [enneagramScores, setEnneagramScores] = useState<EnneagramScores>({ ...DEFAULT_ENNEAGRAM_SCORES });
   const [enneagramSubtype, setEnneagramSubtype] = useState('');
+  const [enneagramUnknown, setEnneagramUnknown] = useState(false);
   const [mbtiType, setMbtiType] = useState('INFJ');
+  const [mbtiUnknown, setMbtiUnknown] = useState(false);
+  const [bigfiveUnknown, setBigfiveUnknown] = useState(false);
   const [bigfive, setBigfive] = useState({
     openness: 50,
     conscientiousness: 50,
@@ -36,8 +39,11 @@ export default function SelfProfilePage() {
         setEnneagramScores(scores);
       }
       setEnneagramSubtype(existing.enneagram.subtype ?? '');
+      setEnneagramUnknown(existing.enneagram.unknown ?? false);
       setMbtiType(existing.mbti.type);
+      setMbtiUnknown(existing.mbti.unknown ?? false);
       setBigfive(existing.bigfive);
+      setBigfiveUnknown(existing.bigfive.unknown ?? false);
     }
   }, [existing]);
 
@@ -60,12 +66,14 @@ export default function SelfProfilePage() {
           type: dominantType,
           scores: enneagramScores,
           subtype: enneagramSubtype || undefined,
+          unknown: enneagramUnknown,
         },
         mbti: {
           type: mbtiType,
           label: selectedMBTI?.label ?? '',
+          unknown: mbtiUnknown,
         },
-        bigfive,
+        bigfive: { ...bigfive, unknown: bigfiveUnknown },
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -112,13 +120,23 @@ export default function SelfProfilePage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-1">
               <h2 className="font-semibold text-gray-900">🔢 エニアグラム</h2>
-              {totalScore > 0 && (
-                <span className="text-sm text-indigo-600 font-medium">
-                  主タイプ: タイプ{dominantType}（{ENNEAGRAM_TYPES.find(t => t.type === dominantType)?.name}）
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {totalScore > 0 && !enneagramUnknown && (
+                  <span className="text-sm text-indigo-600 font-medium">
+                    主タイプ: タイプ{dominantType}（{ENNEAGRAM_TYPES.find(t => t.type === dominantType)?.name}）
+                  </span>
+                )}
+                <button type="button" onClick={() => setEnneagramUnknown(!enneagramUnknown)}
+                  className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${enneagramUnknown ? 'bg-gray-500 text-white border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+                  不明
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-gray-400 mb-4">各タイプへの当てはまり度を 0〜9 で入力してください（0＝全く当てはまらない、9＝強く当てはまる）</p>
+            {enneagramUnknown ? (
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-500">不明に設定されています。AI分析時にこの指標はスキップされます。</div>
+            ) : (
+              <>
+                <p className="text-xs text-gray-400 mb-4">各タイプへの当てはまり度を 0〜9 で入力してください</p>
             <div className="space-y-2">
               {ENNEAGRAM_TYPES.map(t => {
                 const score = enneagramScores[t.type as keyof EnneagramScores];
@@ -148,26 +166,49 @@ export default function SelfProfilePage() {
                 {SUBTYPES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+              </>
+            )}
           </div>
 
           {/* MBTI */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-gray-900 mb-4">🧠 MBTI</h2>
-            <select value={mbtiType} onChange={e => setMbtiType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              {MBTI_GROUPS.map(group => (
-                <optgroup key={group} label={group}>
-                  {MBTI_OPTIONS.filter(o => o.group === group).map(o => (
-                    <option key={o.type} value={o.type}>{o.label}（{o.type}）</option>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-900">🧠 MBTI</h2>
+              <button type="button" onClick={() => setMbtiUnknown(!mbtiUnknown)}
+                className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${mbtiUnknown ? 'bg-gray-500 text-white border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+                不明
+              </button>
+            </div>
+            {mbtiUnknown ? (
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-500">不明に設定されています。AI分析時にこの指標はスキップされます。</div>
+            ) : (
+              <>
+                <select value={mbtiType} onChange={e => setMbtiType(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  {MBTI_GROUPS.map(group => (
+                    <optgroup key={group} label={group}>
+                      {MBTI_OPTIONS.filter(o => o.group === group).map(o => (
+                        <option key={o.type} value={o.type}>{o.label}（{o.type}）</option>
+                      ))}
+                    </optgroup>
                   ))}
-                </optgroup>
-              ))}
-            </select>
-            {selectedMBTI && <p className="text-sm text-indigo-600 mt-2">選択中: <strong>{selectedMBTI.label}（{selectedMBTI.type}）</strong> — {selectedMBTI.group}</p>}
+                </select>
+                {selectedMBTI && !mbtiUnknown && <p className="text-sm text-indigo-600 mt-2">選択中: <strong>{selectedMBTI.label}（{selectedMBTI.type}）</strong> — {selectedMBTI.group}</p>}
+              </>
+            )}
           </div>
 
           {/* Big Five */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="font-semibold text-gray-900 mb-4">📊 Big Five</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-900">📊 Big Five</h2>
+              <button type="button" onClick={() => setBigfiveUnknown(!bigfiveUnknown)}
+                className={`px-3 py-1 rounded-full border text-xs font-medium transition-colors ${bigfiveUnknown ? 'bg-gray-500 text-white border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+                不明
+              </button>
+            </div>
+            {bigfiveUnknown ? (
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-500">不明に設定されています。AI分析時にこの指標はスキップされます。</div>
+            ) : (
             <div className="space-y-4">
               {(Object.keys(bigfiveLabels) as (keyof typeof bigfive)[]).map(key => (
                 <div key={key}>
@@ -180,6 +221,7 @@ export default function SelfProfilePage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
 
           <button onClick={handleSave} disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-medium py-3 rounded-xl transition-colors">

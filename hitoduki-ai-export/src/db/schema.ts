@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { SelfProfile, Member, MeetingConsultation, ChatMessage, SelfAnalysis } from '../types';
+import type { SelfProfile, Member, MeetingConsultation, ChatMessage, SelfAnalysis, MemberChatMessage } from '../types';
 
 export class HitodukiDB extends Dexie {
   selfProfile!: Table<SelfProfile>;
@@ -7,6 +7,7 @@ export class HitodukiDB extends Dexie {
   meetingConsultations!: Table<MeetingConsultation>;
   chatMessages!: Table<ChatMessage>;
   selfAnalysis!: Table<SelfAnalysis>;
+  memberChatMessages!: Table<MemberChatMessage>;
 
   constructor() {
     super('HitodukiAI');
@@ -22,6 +23,14 @@ export class HitodukiDB extends Dexie {
       chatMessages: 'id, createdAt',
       selfAnalysis: 'id',
     });
+    this.version(3).stores({
+      selfProfile: 'id',
+      members: 'id, name, createdAt',
+      meetingConsultations: 'id, title, createdAt',
+      chatMessages: 'id, createdAt',
+      selfAnalysis: 'id',
+      memberChatMessages: 'id, memberId, createdAt',
+    });
   }
 }
 
@@ -32,7 +41,8 @@ export async function exportData(): Promise<string> {
   const members = await db.members.toArray();
   const meetingConsultations = await db.meetingConsultations.toArray();
   const chatMessages = await db.chatMessages.toArray();
-  return JSON.stringify({ selfProfile, members, meetingConsultations, chatMessages }, null, 2);
+  const memberChatMessages = await db.memberChatMessages.toArray();
+  return JSON.stringify({ selfProfile, members, meetingConsultations, chatMessages, memberChatMessages }, null, 2);
 }
 
 export async function importData(json: string): Promise<void> {
@@ -41,4 +51,5 @@ export async function importData(json: string): Promise<void> {
   if (data.members) for (const item of data.members) await db.members.put(item);
   if (data.meetingConsultations) for (const item of data.meetingConsultations) await db.meetingConsultations.put(item);
   if (data.chatMessages) for (const item of data.chatMessages) await db.chatMessages.put(item);
+  if (data.memberChatMessages) for (const item of data.memberChatMessages) await db.memberChatMessages.put(item);
 }

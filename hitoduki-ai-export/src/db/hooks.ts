@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './schema';
-import type { Member, MeetingConsultation, SelfProfile, ChatMessage, SelfAnalysis } from '../types';
+import type { Member, MeetingConsultation, SelfProfile, ChatMessage, SelfAnalysis, MemberChatMessage } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 // Self Profile
@@ -78,4 +78,22 @@ export async function addChatMessage(msg: Omit<ChatMessage, 'id' | 'createdAt'>)
 
 export async function clearChatMessages() {
   await db.chatMessages.clear();
+}
+
+// Member Chat Messages
+export function useMemberChatMessages(memberId: string) {
+  return useLiveQuery(
+    () => db.memberChatMessages.where('memberId').equals(memberId).sortBy('createdAt'),
+    [memberId]
+  );
+}
+
+export async function addMemberChatMessage(msg: Omit<MemberChatMessage, 'id' | 'createdAt'>) {
+  const id = uuidv4();
+  await db.memberChatMessages.add({ ...msg, id, createdAt: new Date() });
+  return id;
+}
+
+export async function clearMemberChatMessages(memberId: string) {
+  await db.memberChatMessages.where('memberId').equals(memberId).delete();
 }

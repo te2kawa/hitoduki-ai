@@ -8,15 +8,17 @@ export const DEFAULT_ENNEAGRAM_SCORES: EnneagramScores = {
 };
 
 export interface Enneagram {
-  type: number; // 最高スコアのタイプ（自動算出）
-  scores?: EnneagramScores; // 各タイプへの点数 0-9
+  type: number;
+  scores?: EnneagramScores;
   wing?: number;
   subtype?: string;
+  unknown?: boolean; // 不明フラグ
 }
 
 export interface MBTI {
   type: string;
   label: string;
+  unknown?: boolean; // 不明フラグ
 }
 
 export interface BigFive {
@@ -25,6 +27,7 @@ export interface BigFive {
   extraversion: number;
   agreeableness: number;
   neuroticism: number;
+  unknown?: boolean; // 不明フラグ
 }
 
 export interface SelfProfile {
@@ -33,6 +36,15 @@ export interface SelfProfile {
   mbti: MBTI;
   bigfive: BigFive;
   updatedAt: Date;
+}
+
+// 各指標の入力モード
+export type IndicatorMode = 'manual' | 'ai' | 'unknown';
+
+export interface MemberIndicatorModes {
+  enneagram: IndicatorMode;
+  mbti: IndicatorMode;
+  bigfive: IndicatorMode;
 }
 
 export interface Member {
@@ -47,7 +59,8 @@ export interface Member {
   experienceLevel?: string;
   values?: string;
   motivation?: string;
-  inputMode: 'manual' | 'ai';
+  inputMode: 'manual' | 'ai'; // 後方互換のため残す
+  indicatorModes?: MemberIndicatorModes; // 指標ごとのモード
   freeText?: string;
   enneagram?: Partial<Enneagram>;
   mbti?: Partial<MBTI>;
@@ -62,6 +75,14 @@ export interface Member {
     bias_correction_note?: string;
   };
   revisedByReflection?: boolean;
+  // ネットワーク相性スコア（AIが算出）
+  compatibility?: {
+    [memberId: string]: {
+      score: number; // -1〜1 (-1:相性悪 0:中立 1:相性良)
+      complementary: number; // 0〜1 (補完度)
+      label: string; // '相性◎' | '相性△' | '補完関係' | '中立'
+    };
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -116,4 +137,12 @@ export interface SelfAnalysis {
   communicationTendencies: string;
   growthAreas: string;
   updatedAt: Date;
+}
+
+export interface MemberChatMessage {
+  id: string;
+  memberId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: Date;
 }
