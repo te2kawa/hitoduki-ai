@@ -33,6 +33,12 @@ export async function analyzeMemember(systemPrompt: string, userPrompt: string) 
     weaknesses_positive: string[];
     communication_advice: string;
     bias_correction_note: string;
+    inferred_mbti?: string;
+    inferred_mbti_label?: string;
+    inferred_mbti_reason?: string;
+    inferred_enneagram_scores?: Record<string, number>;
+    inferred_enneagram_main?: number;
+    inferred_enneagram_reason?: string;
   }>(raw);
 }
 
@@ -69,6 +75,8 @@ export async function analyzeSelf(systemPrompt: string, userPrompt: string) {
     howOthersSeeYou: string[];
     communicationTendencies: string;
     growthAreas: string;
+    dislikedBySuperior: string[];
+    dislikedByPeer: string[];
   }>(raw);
 }
 

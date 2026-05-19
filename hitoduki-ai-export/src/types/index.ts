@@ -73,6 +73,13 @@ export interface Member {
     weaknesses_positive?: string[];
     communication_advice?: string;
     bias_correction_note?: string;
+    // AI推定タイプ（バイアス補正済み）
+    inferred_mbti?: string;
+    inferred_mbti_label?: string;
+    inferred_mbti_reason?: string;
+    inferred_enneagram_scores?: Record<string, number>;
+    inferred_enneagram_main?: number;
+    inferred_enneagram_reason?: string;
   };
   revisedByReflection?: boolean;
   // ネットワーク相性スコア（AIが算出）
@@ -136,6 +143,8 @@ export interface SelfAnalysis {
   howOthersSeeYou: string[];
   communicationTendencies: string;
   growthAreas: string;
+  dislikedBySuperior?: string[];
+  dislikedByPeer?: string[];
   updatedAt: Date;
 }
 

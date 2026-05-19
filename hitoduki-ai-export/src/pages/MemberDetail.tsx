@@ -202,7 +202,20 @@ export default function MemberDetail() {
       const systemPrompt = buildMemberAnalysisSystemPrompt(selfProfile);
       const userPrompt = buildMemberAnalysisUserPrompt(currentMember);
       const analysis = await analyzeMemember(systemPrompt, userPrompt);
-      await updateMember(id!, { aiInferred: { ...(member!.aiInferred ?? {}), ...analysis } });
+
+      // aiInferredに推定タイプも保存
+      const newAiInferred = {
+        ...(member!.aiInferred ?? {}),
+        ...analysis,
+        mbti: (member!.mbti?.unknown !== false && analysis.inferred_mbti)
+          ? { type: analysis.inferred_mbti, label: analysis.inferred_mbti_label ?? '' }
+          : (member!.aiInferred?.mbti ?? undefined),
+        enneagram: (member!.enneagram?.unknown !== false && analysis.inferred_enneagram_main)
+          ? { type: analysis.inferred_enneagram_main }
+          : (member!.aiInferred?.enneagram ?? undefined),
+      };
+
+      await updateMember(id!, { aiInferred: newAiInferred });
       setEditingFreeText(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '分析中にエラーが発生しました');
@@ -428,6 +441,50 @@ export default function MemberDetail() {
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                     <h3 className="text-sm font-semibold text-amber-800 mb-1">🔍 バイアス補正メモ</h3>
                     <p className="text-sm text-amber-700">{result.bias_correction_note}</p>
+                  </div>
+                )}
+
+                {/* AI推定タイプ */}
+                {(result.inferred_mbti || result.inferred_enneagram_main) && (
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-indigo-800 mb-3">🤖 AI推定タイプ（バイアス補正済み）</h3>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {result.inferred_mbti && (
+                        <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-bold">
+                          {result.inferred_mbti_label}（{result.inferred_mbti}）
+                        </span>
+                      )}
+                      {result.inferred_enneagram_main && (
+                        <span className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-bold">
+                          エニアグラム タイプ{result.inferred_enneagram_main}
+                        </span>
+                      )}
+                    </div>
+                    {result.inferred_mbti_reason && (
+                      <p className="text-xs text-indigo-700 mb-1">MBTI: {result.inferred_mbti_reason}</p>
+                    )}
+                    {result.inferred_enneagram_reason && (
+                      <p className="text-xs text-purple-700 mb-2">エニアグラム: {result.inferred_enneagram_reason}</p>
+                    )}
+                    {/* エニアグラムスコアバー */}
+                    {result.inferred_enneagram_scores && (
+                      <div className="mt-2 space-y-1">
+                        {Object.entries(result.inferred_enneagram_scores)
+                          .sort(([,a],[,b]) => b - a)
+                          .slice(0, 5)
+                          .map(([type, score]) => (
+                          <div key={type} className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500 w-12">タイプ{type}</span>
+                            <div className="flex-1 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                              <div className="h-full bg-purple-400 rounded-full transition-all"
+                                style={{ width: `${(score / 9) * 100}%` }} />
+                            </div>
+                            <span className="text-xs text-gray-500 w-4">{score}</span>
+                          </div>
+                        ))}
+                        <p className="text-xs text-gray-400 mt-1">上位5タイプを表示</p>
+                      </div>
+                    )}
                   </div>
                 )}
                 {result.strengths && result.strengths.length > 0 && (

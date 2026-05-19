@@ -20,6 +20,8 @@ export function buildMemberAnalysisSystemPrompt(self: SelfProfile): string {
 2. 分析者の特性を考慮してバイアスを補正し、できるだけニュートラルな評価に変換すること
 3. 弱みに見える点もポジティブに言い換え、相手の素晴らしさを再認識させる表現を使うこと
 4. 「悪口を増幅しない」「ポジティブな再解釈を促す」を常に意識すること
+5. 人物評・情報からMBTIとエニアグラムを必ず推定すること。情報が少ない場合も最も可能性が高いタイプを推定すること
+6. エニアグラムは各タイプ(1〜9)への当てはまり度を0〜9のスコアで表現すること（分析者自身のバイアスを引いた上でニュートラルに推定）
 
 【出力形式】
 必ずJSON形式のみで応答すること（説明文や前置きは不要）:
@@ -27,7 +29,13 @@ export function buildMemberAnalysisSystemPrompt(self: SelfProfile): string {
   "strengths": ["強み1", "強み2", "強み3"],
   "weaknesses_positive": ["ポジティブ変換した弱み1", "ポジティブ変換した弱み2"],
   "communication_advice": "コミュニケーションのアドバイス（具体的に）",
-  "bias_correction_note": "バイアス補正の説明（分析者の傾向がどう影響しているか）"
+  "bias_correction_note": "バイアス補正の説明（分析者の傾向がどう影響しているか）",
+  "inferred_mbti": "INFJ",
+  "inferred_mbti_label": "提唱者",
+  "inferred_mbti_reason": "推定理由（1〜2文）",
+  "inferred_enneagram_scores": {"1":2,"2":1,"3":3,"4":5,"5":8,"6":2,"7":1,"8":1,"9":3},
+  "inferred_enneagram_main": 5,
+  "inferred_enneagram_reason": "推定理由（1〜2文）"
 }`;
 }
 
@@ -136,7 +144,9 @@ export function buildSelfAnalysisSystemPrompt(): string {
 2. 強みは具体的で活かせる形で表現すること
 3. 弱みはポジティブに言い換え、成長の余地として表現すること
 4. 「他人からどう見られやすいか」は客観的な視点で記述すること
-5. 日本語で、温かみのある表現を使うこと
+5. 「嫌われる理由」は遠慮なく辛辣に、具体的な行動・言動・癖まで踏み込むこと。表面的な表現は避け、実際に職場で嫌われる具体的なシーンを想像して書くこと
+6. 上司目線と同僚/部下目線は、それぞれの立場から感じる「イライラ」「不満」「やりにくさ」を率直に書くこと
+7. 日本語で記述すること
 
 【出力形式】
 必ずJSON形式のみで応答すること:
@@ -145,7 +155,9 @@ export function buildSelfAnalysisSystemPrompt(): string {
   "weaknesses": ["成長ポイント1", "成長ポイント2", "成長ポイント3"],
   "howOthersSeeYou": ["他人からの見られ方1", "他人からの見られ方2", "他人からの見られ方3"],
   "communicationTendencies": "コミュニケーションの傾向（2〜3文）",
-  "growthAreas": "さらなる成長のためのヒント（2〜3文）"
+  "growthAreas": "さらなる成長のためのヒント（2〜3文）",
+  "dislikedBySuperior": ["上司からの嫌われ理由1（具体的・辛辣に）", "上司からの嫌われ理由2", "上司からの嫌われ理由3"],
+  "dislikedByPeer": ["同僚・部下からの嫌われ理由1（具体的・辛辣に）", "同僚・部下からの嫌われ理由2", "同僚・部下からの嫌われ理由3"]
 }`;
 }
 

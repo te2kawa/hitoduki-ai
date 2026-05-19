@@ -18,18 +18,42 @@ function calcCompatibility(a: Member, b: Member): { score: number; complementary
   let complementary = 0;
   let factors = 0;
 
-  // aiInferred を優先してフォールバック
-  const aEnn = a.enneagram?.type || a.aiInferred?.enneagram?.type;
-  const bEnn = b.enneagram?.type || b.aiInferred?.enneagram?.type;
-  const aMbti = (a.mbti?.type || a.aiInferred?.mbti?.type || '').toUpperCase();
-  const bMbti = (b.mbti?.type || b.aiInferred?.mbti?.type || '').toUpperCase();
+  // aiInferred を優先してフォールバック（推定値も含む）
+  const aEnn = a.enneagram?.type || a.aiInferred?.enneagram?.type || a.aiInferred?.inferred_enneagram_main;
+  const bEnn = b.enneagram?.type || b.aiInferred?.enneagram?.type || b.aiInferred?.inferred_enneagram_main;
+  const aMbti = (a.mbti?.type || a.aiInferred?.mbti?.type || a.aiInferred?.inferred_mbti || '').toUpperCase();
+  const bMbti = (b.mbti?.type || b.aiInferred?.mbti?.type || b.aiInferred?.inferred_mbti || '').toUpperCase();
 
-  // エニアグラムベースの相性
+  // エニアグラムスコア（細かい分布を使えるなら使う）
+  const aScores = a.enneagram?.scores || (a.aiInferred?.inferred_enneagram_scores
+    ? Object.fromEntries(Object.entries(a.aiInferred.inferred_enneagram_scores).map(([k,v]) => [k, v]))
+    : null);
+  const bScores = b.enneagram?.scores || (b.aiInferred?.inferred_enneagram_scores
+    ? Object.fromEntries(Object.entries(b.aiInferred.inferred_enneagram_scores).map(([k,v]) => [k, v]))
+    : null);
+
+  // エニアグラムベースの相性（スコア分布があればより精密に）
   if (aEnn && bEnn && !a.enneagram?.unknown && !b.enneagram?.unknown) {
-    const diff = Math.min(Math.abs(aEnn - bEnn), 9 - Math.abs(aEnn - bEnn));
-    if (diff <= 1) score += 0.6;
-    else if (diff === 4 || diff === 5) { complementary += 0.7; score -= 0.2; }
-    else score += 0.2;
+    if (aScores && bScores) {
+      // スコア分布のコサイン類似度で相性を計算
+      let dot = 0, normA = 0, normB = 0;
+      for (let t = 1; t <= 9; t++) {
+        const av = (aScores as Record<string, number>)[String(t)] ?? 0;
+        const bv = (bScores as Record<string, number>)[String(t)] ?? 0;
+        dot += av * bv;
+        normA += av * av;
+        normB += bv * bv;
+      }
+      const similarity = normA > 0 && normB > 0 ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+      if (similarity > 0.8) score += 0.6;
+      else if (similarity > 0.5) score += 0.3;
+      else if (similarity < 0.2) complementary += 0.5;
+    } else {
+      const diff = Math.min(Math.abs(aEnn - bEnn), 9 - Math.abs(aEnn - bEnn));
+      if (diff <= 1) score += 0.6;
+      else if (diff === 4 || diff === 5) { complementary += 0.7; score -= 0.2; }
+      else score += 0.2;
+    }
     factors++;
   }
 

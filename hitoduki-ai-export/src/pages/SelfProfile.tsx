@@ -289,6 +289,36 @@ export default function SelfProfilePage() {
                     <p className="text-sm text-gray-600">{existingAnalysis.growthAreas}</p>
                   </div>
 
+                  {/* 嫌われる理由：上司目線 */}
+                  {existingAnalysis.dislikedBySuperior && existingAnalysis.dislikedBySuperior.length > 0 && (
+                    <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+                      <h3 className="text-sm font-semibold text-red-800 mb-2">😤 上司から嫌われる理由</h3>
+                      <p className="text-xs text-red-500 mb-2">自己理解のための辛口フィードバック</p>
+                      <ul className="space-y-1.5">
+                        {existingAnalysis.dislikedBySuperior.map((s, i) => (
+                          <li key={i} className="text-sm text-red-700 flex items-start gap-2">
+                            <span className="mt-0.5 flex-shrink-0">•</span><span>{s}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 嫌われる理由：同僚・部下目線 */}
+                  {existingAnalysis.dislikedByPeer && existingAnalysis.dislikedByPeer.length > 0 && (
+                    <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
+                      <h3 className="text-sm font-semibold text-orange-800 mb-2">😒 同僚・部下から嫌われる理由</h3>
+                      <p className="text-xs text-orange-500 mb-2">自己理解のための辛口フィードバック</p>
+                      <ul className="space-y-1.5">
+                        {existingAnalysis.dislikedByPeer.map((s, i) => (
+                          <li key={i} className="text-sm text-orange-700 flex items-start gap-2">
+                            <span className="mt-0.5 flex-shrink-0">•</span><span>{s}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   <p className="text-xs text-gray-400 text-right">
                     最終更新: {new Date(existingAnalysis.updatedAt).toLocaleDateString('ja-JP')}
                   </p>
