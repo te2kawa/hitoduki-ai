@@ -5,7 +5,8 @@ import { analyzeMemember, chatWithAI } from '../api/claude';
 import { buildMemberAnalysisSystemPrompt, buildMemberAnalysisUserPrompt, buildMemberChatSystemPrompt } from '../api/prompts';
 import { MBTI_OPTIONS, MBTI_GROUPS } from '../constants/mbti';
 import { ENNEAGRAM_TYPES } from '../constants/enneagram';
-import type { MemberChatMessage, MemberIndicatorModes } from '../types';
+import type { MemberChatMessage, MemberIndicatorModes, EnneagramScores } from '../types';
+import { DEFAULT_ENNEAGRAM_SCORES } from '../types';
 
 // ===== チャットコンポーネント =====
 function MemberChat({ memberId }: { memberId: string }) {
@@ -153,7 +154,7 @@ export default function MemberDetail() {
   const [editingFreeText, setEditingFreeText] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'chat'>('profile');
   const [editingTypes, setEditingTypes] = useState(false);
-  const [editEnneagramType, setEditEnneagramType] = useState<number | ''>('');
+  const [editEnneagramScores, setEditEnneagramScores] = useState<EnneagramScores>({ ...DEFAULT_ENNEAGRAM_SCORES });
   const [editMbtiType, setEditMbtiType] = useState('');
   const [editIndicatorModes, setEditIndicatorModes] = useState<MemberIndicatorModes>({ enneagram: 'unknown', mbti: 'unknown', bigfive: 'unknown' });
 
@@ -167,12 +168,22 @@ export default function MemberDetail() {
   const result = member.aiInferred;
 
   function startEditingTypes() {
-    setEditEnneagramType(member!.enneagram?.type && !member!.enneagram?.unknown ? member!.enneagram.type : '');
+    // 既存スコアを復元、なければ主タイプのみセット
+    const existingScores = member!.enneagram?.scores;
+    if (existingScores) {
+      setEditEnneagramScores(existingScores);
+    } else if (member!.enneagram?.type && !member!.enneagram?.unknown) {
+      const scores = { ...DEFAULT_ENNEAGRAM_SCORES };
+      scores[member!.enneagram.type as keyof EnneagramScores] = 9;
+      setEditEnneagramScores(scores);
+    } else {
+      setEditEnneagramScores({ ...DEFAULT_ENNEAGRAM_SCORES });
+    }
     setEditMbtiType(member!.mbti?.type && !member!.mbti?.unknown ? member!.mbti.type : '');
     setEditIndicatorModes({
       enneagram: member!.enneagram?.unknown ? 'unknown' : member!.enneagram?.type ? 'manual' : 'unknown',
       mbti: member!.mbti?.unknown ? 'unknown' : member!.mbti?.type ? 'manual' : 'unknown',
-      bigfive: member!.bigfive?.unknown ? 'unknown' : 'unknown',
+      bigfive: 'unknown',
     });
     setEditingTypes(true);
   }
@@ -180,9 +191,14 @@ export default function MemberDetail() {
   async function handleSaveTypes() {
     const MBTI_OPTS = (await import('../constants/mbti')).MBTI_OPTIONS;
     const selectedMBTI = MBTI_OPTS.find(o => o.type === editMbtiType);
+    const totalScore = Object.values(editEnneagramScores).reduce((a, b) => a + b, 0);
+    const dominantType = totalScore > 0
+      ? (Object.entries(editEnneagramScores) as [string, number][])
+          .reduce((max, [t, s]) => s > max.score ? { type: Number(t), score: s } : max, { type: 1, score: -1 }).type
+      : 0;
     await updateMember(id!, {
-      enneagram: editIndicatorModes.enneagram === 'manual' && editEnneagramType !== ''
-        ? { type: Number(editEnneagramType), unknown: false }
+      enneagram: editIndicatorModes.enneagram === 'manual' && dominantType > 0
+        ? { type: dominantType, scores: editEnneagramScores, unknown: false }
         : { type: 0, unknown: true },
       mbti: editIndicatorModes.mbti === 'manual' && editMbtiType
         ? { type: editMbtiType, label: selectedMBTI?.label ?? '', unknown: false }
@@ -325,13 +341,48 @@ export default function MemberDetail() {
                       </div>
                     </div>
                     {editIndicatorModes.enneagram === 'manual' && (
-                      <select value={editEnneagramType} onChange={e => setEditEnneagramType(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option value="">未設定</option>
-                        {ENNEAGRAM_TYPES.map(t => (
-                          <option key={t.type} value={t.type}>タイプ{t.type}（{t.name}）</option>
-                        ))}
-                      </select>
+                      <div className="space-y-1.5 mt-2">
+                        {(() => {
+                          const totalScore = Object.values(editEnneagramScores).reduce((a, b) => a + b, 0);
+                          const dominantType = totalScore > 0
+                            ? (Object.entries(editEnneagramScores) as [string, number][])
+                                .reduce((max, [t, s]) => s > max.score ? { type: Number(t), score: s } : max, { type: 1, score: -1 })
+                            : null;
+                          return (
+                            <>
+                              {dominantType && dominantType.score > 0 && (
+                                <p className="text-xs text-indigo-600 mb-2 font-medium">
+                                  主タイプ: タイプ{dominantType.type}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-400 mb-2">各タイプへの当てはまり度を 0〜9 で入力</p>
+                              {ENNEAGRAM_TYPES.map(t => {
+                                const score = editEnneagramScores[t.type as keyof EnneagramScores];
+                                const isDominant = dominantType && t.type === dominantType.type && dominantType.score > 0;
+                                return (
+                                  <div key={t.type} className={`flex items-center gap-3 p-1.5 rounded-lg ${isDominant ? 'bg-indigo-50' : ''}`}>
+                                    <div className="w-20 flex-shrink-0">
+                                      <span className={`font-bold text-xs ${isDominant ? 'text-indigo-700' : 'text-gray-700'}`}>タイプ{t.type}</span>
+                                      <p className="text-xs text-gray-400">{t.name}</p>
+                                    </div>
+                                    <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                      <div className={`h-full rounded-full transition-all ${isDominant ? 'bg-indigo-500' : 'bg-gray-300'}`}
+                                        style={{ width: `${(score / 9) * 100}%` }} />
+                                    </div>
+                                    <input type="number" min={0} max={9} value={score}
+                                      onChange={e => setEditEnneagramScores(prev => ({
+                                        ...prev,
+                                        [t.type]: Math.min(9, Math.max(0, Number(e.target.value) || 0))
+                                      }))}
+                                      className={`w-12 text-center border rounded-lg py-1 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isDominant ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-700'}`}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </>
+                          );
+                        })()}
+                      </div>
                     )}
                   </div>
 

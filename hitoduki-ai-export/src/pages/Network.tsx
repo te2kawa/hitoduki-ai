@@ -3,141 +3,280 @@ import { useNavigate } from 'react-router-dom';
 import ReactFlow, {
   type Node,
   type Edge,
+  type EdgeProps,
   Background,
   Controls,
   MiniMap,
   MarkerType,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
+
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useMembers, useSelfProfile } from '../db/hooks';
 import type { Member } from '../types';
 
-// 相性スコア算出（-1〜1）
-function calcCompatibility(a: Member, b: Member): { score: number; complementary: number; label: string } {
-  let score = 0;
-  let complementary = 0;
-  let factors = 0;
+// ===== 相性計算（内訳・論拠つき） =====
+interface CompatResult {
+  totalScore: number;       // 0〜100
+  complementaryScore: number; // 0〜100
+  breakdown: { label: string; score: number; max: number; reason: string }[];
+  label: string;
+  color: string;
+}
 
-  // aiInferred を優先してフォールバック（推定値も含む）
+function calcCompatibility(a: Member, b: Member): CompatResult {
+  const breakdown: { label: string; score: number; max: number; reason: string }[] = [];
+
   const aEnn = a.enneagram?.type || a.aiInferred?.enneagram?.type || a.aiInferred?.inferred_enneagram_main;
   const bEnn = b.enneagram?.type || b.aiInferred?.enneagram?.type || b.aiInferred?.inferred_enneagram_main;
   const aMbti = (a.mbti?.type || a.aiInferred?.mbti?.type || a.aiInferred?.inferred_mbti || '').toUpperCase();
   const bMbti = (b.mbti?.type || b.aiInferred?.mbti?.type || b.aiInferred?.inferred_mbti || '').toUpperCase();
-
-  // エニアグラムスコア（細かい分布を使えるなら使う）
   const aScores = a.enneagram?.scores || (a.aiInferred?.inferred_enneagram_scores
-    ? Object.fromEntries(Object.entries(a.aiInferred.inferred_enneagram_scores).map(([k,v]) => [k, v]))
-    : null);
+    ? Object.fromEntries(Object.entries(a.aiInferred.inferred_enneagram_scores).map(([k,v]) => [k, v])) : null);
   const bScores = b.enneagram?.scores || (b.aiInferred?.inferred_enneagram_scores
-    ? Object.fromEntries(Object.entries(b.aiInferred.inferred_enneagram_scores).map(([k,v]) => [k, v]))
-    : null);
+    ? Object.fromEntries(Object.entries(b.aiInferred.inferred_enneagram_scores).map(([k,v]) => [k, v])) : null);
 
-  // エニアグラムベースの相性（スコア分布があればより精密に）
+  let totalRaw = 0;
+  let complementaryRaw = 0;
+  let maxPossible = 0;
+
+  // ① エニアグラム（最大40点）
   if (aEnn && bEnn && !a.enneagram?.unknown && !b.enneagram?.unknown) {
+    maxPossible += 40;
     if (aScores && bScores) {
-      // スコア分布のコサイン類似度で相性を計算
       let dot = 0, normA = 0, normB = 0;
       for (let t = 1; t <= 9; t++) {
         const av = (aScores as Record<string, number>)[String(t)] ?? 0;
         const bv = (bScores as Record<string, number>)[String(t)] ?? 0;
-        dot += av * bv;
-        normA += av * av;
-        normB += bv * bv;
+        dot += av * bv; normA += av * av; normB += bv * bv;
       }
-      const similarity = normA > 0 && normB > 0 ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
-      if (similarity > 0.8) score += 0.6;
-      else if (similarity > 0.5) score += 0.3;
-      else if (similarity < 0.2) complementary += 0.5;
+      const sim = normA > 0 && normB > 0 ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+      const pts = Math.round(sim * 40);
+      totalRaw += pts;
+      if (sim < 0.3) complementaryRaw += 20;
+      breakdown.push({
+        label: 'エニアグラム類似度',
+        score: pts,
+        max: 40,
+        reason: sim > 0.7
+          ? `タイプ${aEnn}とタイプ${bEnn}のスコア分布が非常に近く、価値観・動機が似ている`
+          : sim > 0.4
+          ? `タイプ${aEnn}とタイプ${bEnn}は部分的に重なる傾向がある`
+          : `タイプ${aEnn}とタイプ${bEnn}は異なる動機を持ち、補完関係になりやすい`,
+      });
     } else {
       const diff = Math.min(Math.abs(aEnn - bEnn), 9 - Math.abs(aEnn - bEnn));
-      if (diff <= 1) score += 0.6;
-      else if (diff === 4 || diff === 5) { complementary += 0.7; score -= 0.2; }
-      else score += 0.2;
+      let pts = 0;
+      let reason = '';
+      if (diff <= 1) { pts = 36; reason = `タイプ${aEnn}とタイプ${bEnn}は隣接タイプで、価値観・世界観が近い`; }
+      else if (diff === 4 || diff === 5) {
+        pts = 12; complementaryRaw += 20;
+        reason = `タイプ${aEnn}とタイプ${bEnn}は対角に位置し、互いの弱点を補い合う補完関係`;
+      }
+      else { pts = 20; reason = `タイプ${aEnn}とタイプ${bEnn}は中程度の類似性がある`; }
+      totalRaw += pts;
+      breakdown.push({ label: 'エニアグラム', score: pts, max: 40, reason });
     }
-    factors++;
   }
 
-  // MBTIベースの相性
+  // ② MBTI（最大35点）
   if (aMbti && bMbti && aMbti.length === 4 && bMbti.length === 4 && !a.mbti?.unknown && !b.mbti?.unknown) {
-    let matches = 0;
-    let diffs = 0;
+    maxPossible += 35;
+    let matches = 0, diffs = 0;
+    const dims = ['E/I', 'N/S', 'T/F', 'J/P'];
+    const matchedDims: string[] = [], diffedDims: string[] = [];
     for (let i = 0; i < 4; i++) {
-      if (aMbti[i] === bMbti[i]) matches++;
-      else diffs++;
+      if (aMbti[i] === bMbti[i]) { matches++; matchedDims.push(dims[i]); }
+      else { diffs++; diffedDims.push(dims[i]); }
     }
-    if (matches >= 3) score += 0.5;
-    else if (matches === 2) score += 0.1;
-    else if (diffs >= 3) complementary += 0.5;
-    factors++;
+    let pts = 0, compPts = 0, reason = '';
+    if (matches >= 3) {
+      pts = 32;
+      reason = `${aMbti}と${bMbti}は${matchedDims.join('・')}が一致。思考・行動パターンが非常に近い`;
+    } else if (matches === 2) {
+      pts = 18;
+      reason = `${aMbti}と${bMbti}は${matchedDims.join('・')}が一致、${diffedDims.join('・')}が異なる`;
+    } else if (diffs >= 3) {
+      pts = 10; compPts = 15;
+      reason = `${aMbti}と${bMbti}は${diffedDims.join('・')}が異なり、補完関係になりやすい`;
+    } else {
+      pts = 14;
+      reason = `${aMbti}と${bMbti}は中程度の類似性（${matchedDims.join('・')}一致）`;
+    }
+    totalRaw += pts;
+    complementaryRaw += compPts;
+    breakdown.push({ label: 'MBTI', score: pts, max: 35, reason });
   }
 
-  // モチベーション
+  // ③ モチベーション（最大15点）
   if (a.motivation && b.motivation) {
-    if (a.motivation === b.motivation) score += 0.3;
-    factors++;
+    maxPossible += 15;
+    const pts = a.motivation === b.motivation ? 15 : 5;
+    totalRaw += pts;
+    breakdown.push({
+      label: 'モチベーション',
+      score: pts,
+      max: 15,
+      reason: a.motivation === b.motivation
+        ? `ともに「${a.motivation}」を動機とし、目指す方向が一致している`
+        : `「${a.motivation}」と「${b.motivation}」で動機が異なるが、刺激し合える可能性がある`,
+    });
   }
 
-  // 意思決定スタイル
+  // ④ 意思決定スタイル（最大10点）
   if (a.decisionStyle && b.decisionStyle) {
-    if (a.decisionStyle === b.decisionStyle) score += 0.2;
-    else complementary += 0.3;
-    factors++;
+    maxPossible += 10;
+    const same = a.decisionStyle === b.decisionStyle;
+    const pts = same ? 10 : 4;
+    if (!same) complementaryRaw += 5;
+    totalRaw += pts;
+    breakdown.push({
+      label: '意思決定スタイル',
+      score: pts,
+      max: 10,
+      reason: same
+        ? `ともに「${a.decisionStyle}」で意思決定のテンポが合いやすい`
+        : `「${a.decisionStyle}」と「${b.decisionStyle}」で補完的。慎重さと決断力のバランスが取れる`,
+    });
   }
 
-  // 関係性・役割からの補完推定
-  if (a.relationship && b.relationship) {
-    const dominant = ['上司', 'リーダー', 'マネージャー'];
-    const aIsDominant = dominant.includes(a.role ?? '') || dominant.includes(a.relationship ?? '');
-    const bIsDominant = dominant.includes(b.role ?? '') || dominant.includes(b.relationship ?? '');
-    if (aIsDominant !== bIsDominant) { complementary += 0.2; factors++; }
-  }
-
-  // フリーテキストのみ（AI分析前）でもノードを表示する
-  // factorsが0でもfreeTextがあれば「分析待ち」として中立で表示
-  if (factors === 0) {
+  if (maxPossible === 0) {
     const hasFreeText = !!(a.freeText || b.freeText);
     const hasAnyInfo = !!(aEnn || bEnn || aMbti || bMbti);
-    if (hasFreeText || hasAnyInfo) {
-      return { score: 0, complementary: 0, label: '分析待ち' };
-    }
-    return { score: 0, complementary: 0, label: '情報不足' };
+    return {
+      totalScore: -1,
+      complementaryScore: 0,
+      breakdown: [],
+      label: hasFreeText || hasAnyInfo ? '分析待ち' : '情報不足',
+      color: hasFreeText || hasAnyInfo ? '#a78bfa' : '#d1d5db',
+    };
   }
 
-  score = score / Math.max(factors * 0.5, 1);
-  complementary = complementary / Math.max(factors * 0.5, 1);
+  const totalScore = Math.round((totalRaw / maxPossible) * 100);
+  const complementaryScore = Math.round(Math.min(complementaryRaw / maxPossible * 100, 100));
 
-  // ラベル決定
+  // ラベルと色
   let label = '中立';
-  if (complementary > 0.5 && score < 0.3) label = '補完関係';
-  else if (score > 0.5) label = '相性◎';
-  else if (score > 0.2) label = '相性○';
-  else if (score < -0.1) label = '相性△';
+  let color = '#d1d5db';
+  if (complementaryScore > 50 && totalScore < 50) {
+    label = '補完関係'; color = '#3b82f6';
+  } else if (totalScore >= 75) {
+    label = '相性◎'; color = '#22c55e';
+  } else if (totalScore >= 55) {
+    label = '相性○'; color = '#86efac';
+  } else if (totalScore < 35) {
+    label = '相性△'; color = '#ef4444';
+  }
 
-  return {
-    score: Math.max(-1, Math.min(1, score)),
-    complementary: Math.max(0, Math.min(1, complementary)),
-    label,
-  };
+  return { totalScore, complementaryScore, breakdown, label, color };
 }
 
-// selfとメンバーの距離算出（相性が良いほど近く、補完は中距離）
-function calcDistance(score: number, complementary: number, baseRadius: number): number {
-  if (score > 0.4) return baseRadius * 0.65; // 相性良：近い
-  if (complementary > 0.5) return baseRadius * 0.85; // 補完：中距離
-  if (score < -0.1) return baseRadius * 1.2; // 相性悪：遠い
-  return baseRadius; // 中立：標準
+// ===== カスタムエッジ（ツールチップつき） =====
+
+
+function CompatEdge({
+  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+  data, markerEnd, style,
+}: EdgeProps) {
+  const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const compat: CompatResult = data?.compat;
+  if (!compat) return null;
+
+  const scoreLabel = compat.totalScore >= 0 ? `${compat.totalScore}点` : compat.label;
+  const color = compat.color;
+
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            pointerEvents: 'all',
+            zIndex: 10,
+          }}
+          className="nodrag nopan"
+          onMouseEnter={(_e) => {
+            const el = document.getElementById(`tooltip-${id}`);
+            if (el) { el.style.display = 'block'; el.style.left = `${labelX}px`; el.style.top = `${labelY + 20}px`; }
+          }}
+          onMouseLeave={(_e) => {
+            const el = document.getElementById(`tooltip-${id}`);
+            if (el) el.style.display = 'none';
+          }}
+        >
+          <div style={{
+            background: color,
+            color: 'white',
+            fontSize: 11,
+            fontWeight: 'bold',
+            padding: '2px 8px',
+            borderRadius: 12,
+            whiteSpace: 'nowrap',
+            cursor: 'default',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+          }}>
+            {scoreLabel}
+          </div>
+        </div>
+
+        {/* ツールチップ */}
+        <div
+          id={`tooltip-${id}`}
+          style={{
+            display: 'none',
+            position: 'absolute',
+            transform: `translate(-50%, 0) translate(${labelX}px,${labelY + 24}px)`,
+            zIndex: 100,
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{
+            background: 'white',
+            border: `1.5px solid ${color}`,
+            borderRadius: 10,
+            padding: '10px 14px',
+            minWidth: 220,
+            maxWidth: 300,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            fontSize: 12,
+          }}>
+            <div style={{ fontWeight: 'bold', color, marginBottom: 6, fontSize: 13 }}>
+              {data?.aName} × {data?.bName}
+            </div>
+            <div style={{ fontWeight: 'bold', marginBottom: 8, fontSize: 14, color: '#111' }}>
+              {compat.totalScore >= 0 ? `総合スコア: ${compat.totalScore}点 / 100点` : compat.label}
+            </div>
+            {compat.breakdown.map((b, i) => (
+              <div key={i} style={{ marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <span style={{ color: '#555' }}>{b.label}</span>
+                  <span style={{ fontWeight: 'bold', color }}>{b.score}/{b.max}点</span>
+                </div>
+                <div style={{ background: '#f0f0f0', borderRadius: 4, height: 4, overflow: 'hidden', marginBottom: 2 }}>
+                  <div style={{ width: `${(b.score / b.max) * 100}%`, height: '100%', background: color, borderRadius: 4 }} />
+                </div>
+                <div style={{ color: '#777', fontSize: 11 }}>{b.reason}</div>
+              </div>
+            ))}
+            {compat.complementaryScore > 40 && (
+              <div style={{ marginTop: 6, padding: '4px 8px', background: '#eff6ff', borderRadius: 6, color: '#1d4ed8', fontSize: 11 }}>
+                補完スコア: {compat.complementaryScore}点 — 互いの弱点を補い合える関係
+              </div>
+            )}
+          </div>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
 }
 
-// エッジカラー
-function edgeColor(compat: { score: number; complementary: number; label: string }): string {
-  if (compat.label === '相性◎') return '#22c55e';
-  if (compat.label === '相性○') return '#86efac';
-  if (compat.label === '補完関係') return '#3b82f6';
-  if (compat.label === '相性△') return '#ef4444';
-  if (compat.label === '分析待ち') return '#a78bfa'; // 紫：AI分析を促す
-  return '#d1d5db';
-}
+const edgeTypes = { compatEdge: CompatEdge };
 
+// ===== メイン =====
 export default function Network() {
   const members = useMembers();
   const selfProfile = useSelfProfile();
@@ -152,7 +291,15 @@ export default function Network() {
     const baseRadius = 220;
     const count = members.length;
 
-    // selfノード
+    // self as pseudo-member for compat calc
+    const selfAsMember: Partial<Member> = selfProfile ? {
+      enneagram: selfProfile.enneagram,
+      mbti: selfProfile.mbti,
+      bigfive: selfProfile.bigfive,
+      motivation: undefined,
+      decisionStyle: undefined,
+    } : {};
+
     const nodes: Node[] = [
       {
         id: 'self',
@@ -173,27 +320,22 @@ export default function Network() {
     ];
     const edges: Edge[] = [];
 
-    // selfとメンバー間のedgeと位置計算
-    const memberCompatWithSelf = members.map(member => {
-      // selfをMemberライクに変換
-      const selfAsMember: Partial<Member> = selfProfile ? {
-        enneagram: selfProfile.enneagram,
-        mbti: selfProfile.mbti,
-        bigfive: selfProfile.bigfive,
-        motivation: undefined,
-        decisionStyle: undefined,
-      } : {};
-      return calcCompatibility(member, selfAsMember as Member);
-    });
+    const memberCompats = members.map(m => calcCompatibility(m, selfAsMember as Member));
 
     members.forEach((member, i) => {
-      const compat = memberCompatWithSelf[i];
-      const radius = calcDistance(compat.score, compat.complementary, baseRadius);
+      const compat = memberCompats[i];
+      // 距離計算
+      let radius = baseRadius;
+      if (compat.totalScore >= 0) {
+        if (compat.totalScore >= 70) radius = baseRadius * 0.65;
+        else if (compat.complementaryScore > 50) radius = baseRadius * 0.85;
+        else if (compat.totalScore < 35) radius = baseRadius * 1.2;
+      }
+
       const angle = (2 * Math.PI * i) / count - Math.PI / 2;
       const x = centerX + radius * Math.cos(angle) - 50;
       const y = centerY + radius * Math.sin(angle) - 30;
       const mbtiType = member.aiInferred?.mbti?.type || member.mbti?.type;
-      const color = edgeColor(compat);
 
       nodes.push({
         id: member.id,
@@ -202,44 +344,43 @@ export default function Network() {
             <div className="text-center cursor-pointer" onClick={() => navigate(`/members/${member.id}`)}>
               <div className="font-bold text-gray-800">{member.name}</div>
               {mbtiType && <div className="text-xs text-gray-500">{mbtiType}</div>}
-              <div className="text-xs mt-0.5 font-medium" style={{ color }}>{compat.label}</div>
+              <div className="text-xs mt-0.5 font-medium" style={{ color: compat.color }}>
+                {compat.totalScore >= 0 ? `${compat.totalScore}点` : compat.label}
+              </div>
             </div>
           ),
         },
         position: { x, y },
         style: {
-          background: 'white',
-          border: `2px solid ${color}`,
+          background: 'white', border: `2px solid ${compat.color}`,
           borderRadius: 12, width: 100, padding: '6px 4px',
         },
       });
 
-      // self↔メンバー のエッジ
       edges.push({
         id: `self-${member.id}`,
         source: 'self',
         target: member.id,
-        style: { stroke: color, strokeWidth: compat.score > 0.4 ? 3 : 1.5 },
-        markerEnd: { type: MarkerType.ArrowClosed, color },
-        label: compat.label,
-        labelStyle: { fontSize: 9, fill: color, fontWeight: 'bold' },
+        type: 'compatEdge',
+        style: { stroke: compat.color, strokeWidth: compat.totalScore >= 70 ? 3 : 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: compat.color },
+        data: { compat, aName: '自分', bName: member.name },
       });
     });
 
-    // メンバー間のエッジ（showMemberEdgesがtrueの時のみ）
+    // メンバー間エッジ
     if (showMemberEdges) {
       for (let i = 0; i < members.length; i++) {
         for (let j = i + 1; j < members.length; j++) {
           const compat = calcCompatibility(members[i], members[j]);
-          if (compat.label === '情報不足' || compat.label === '中立') continue;
-          const color = edgeColor(compat);
+          if (compat.label === '情報不足') continue;
           edges.push({
             id: `member-${members[i].id}-${members[j].id}`,
             source: members[i].id,
             target: members[j].id,
-            style: { stroke: color, strokeWidth: 1.5, strokeDasharray: '4 3' },
-            label: compat.label,
-            labelStyle: { fontSize: 8, fill: color },
+            type: 'compatEdge',
+            style: { stroke: compat.color, strokeWidth: 1.5, strokeDasharray: '4 3' },
+            data: { compat, aName: members[i].name, bName: members[j].name },
           });
         }
       }
@@ -261,37 +402,37 @@ export default function Network() {
 
   return (
     <div className="p-6 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h1 className="text-2xl font-bold text-gray-900">関係性ネットワーク</h1>
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={showMemberEdges} onChange={e => setShowMemberEdges(e.target.checked)} className="accent-indigo-600" />
-            メンバー間の関係線を表示
-          </label>
-        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input type="checkbox" checked={showMemberEdges} onChange={e => setShowMemberEdges(e.target.checked)} className="accent-indigo-600" />
+          メンバー間の関係線を表示
+        </label>
       </div>
 
       {/* 凡例 */}
-      <div className="flex gap-4 mb-3 text-xs flex-wrap">
+      <div className="flex gap-4 mb-2 text-xs flex-wrap">
         {[
-          { color: '#22c55e', label: '相性◎（似た考え方）' },
-          { color: '#86efac', label: '相性○' },
-          { color: '#3b82f6', label: '補完関係（互いを活かし合える）' },
-          { color: '#ef4444', label: '相性△（摩擦が生じやすい）' },
-          { color: '#a78bfa', label: '分析待ち（AI分析で確定）' },
+          { color: '#22c55e', label: '相性◎（75点〜）' },
+          { color: '#86efac', label: '相性○（55〜74点）' },
+          { color: '#3b82f6', label: '補完関係' },
+          { color: '#ef4444', label: '相性△（〜34点）' },
+          { color: '#a78bfa', label: '分析待ち' },
         ].map(item => (
           <span key={item.label} className="flex items-center gap-1.5">
-            <span className="w-4 h-0.5 inline-block rounded" style={{ background: item.color, height: 3 }} />
+            <span className="inline-block rounded" style={{ background: item.color, width: 14, height: 3 }} />
             <span className="text-gray-600">{item.label}</span>
           </span>
         ))}
       </div>
-      <p className="text-xs text-gray-400 mb-2">
-        実線：自分↔メンバー / 破線：メンバー間 / ノードの距離：自分との相性（近いほど似た志向性）
-      </p>
+      <p className="text-xs text-gray-400 mb-2">エッジの点数にマウスオーバーすると内訳と論拠を表示</p>
 
       <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ minHeight: 500 }}>
-        <ReactFlow nodes={nodes} edges={edges} fitView attributionPosition="bottom-right">
+        <ReactFlow
+          nodes={nodes} edges={edges}
+          edgeTypes={edgeTypes}
+          fitView attributionPosition="bottom-right"
+        >
           <Background />
           <Controls />
           <MiniMap />

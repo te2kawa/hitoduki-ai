@@ -42,18 +42,19 @@ export function buildMemberAnalysisSystemPrompt(self: SelfProfile): string {
 export function buildMemberAnalysisUserPrompt(member: Member): string {
   const parts: string[] = [];
 
-  if (member.inputMode === 'manual') {
-    if (member.enneagram?.type) {
-      parts.push(`エニアグラム: タイプ${member.enneagram.type}${member.enneagram.wing ? `w${member.enneagram.wing}` : ''}`);
+  if (member.indicatorModes?.enneagram === 'manual' || member.inputMode === 'manual') {
+    if (member.enneagram?.type && !member.enneagram.unknown) {
+      const scoreDesc = member.enneagram.scores
+        ? `（スコア分布: ${Object.entries(member.enneagram.scores).map(([t, s]) => `T${t}:${s}`).join(' ')}）`
+        : '';
+      parts.push(`エニアグラム: タイプ${member.enneagram.type}${member.enneagram.wing ? `w${member.enneagram.wing}` : ''}${scoreDesc}`);
     }
-    if (member.mbti?.type) {
+    if (member.mbti?.type && !member.mbti.unknown) {
       parts.push(`MBTI: ${member.mbti.label}（${member.mbti.type}）`);
     }
-    if (member.bigfive) {
+    if (member.bigfive && !member.bigfive.unknown) {
       const bf = member.bigfive;
-      if (Object.values(bf).some(v => v !== undefined)) {
-        parts.push(`Big Five: 開放性:${bf.openness ?? '?'}/誠実性:${bf.conscientiousness ?? '?'}/外向性:${bf.extraversion ?? '?'}/協調性:${bf.agreeableness ?? '?'}/神経症傾向:${bf.neuroticism ?? '?'}`);
-      }
+      parts.push(`Big Five: 開放性:${bf.openness ?? '?'}/誠実性:${bf.conscientiousness ?? '?'}/外向性:${bf.extraversion ?? '?'}/協調性:${bf.agreeableness ?? '?'}/神経症傾向:${bf.neuroticism ?? '?'}`);
     }
     if (member.freeText) {
       parts.push(`\n人物評・メモ:\n${member.freeText}`);
