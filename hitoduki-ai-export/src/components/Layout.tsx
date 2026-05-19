@@ -14,9 +14,9 @@ export default function Layout() {
   const { logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
+    <div className="h-screen bg-gray-50 flex overflow-hidden">
+      {/* Sidebar - 固定 */}
+      <aside className="w-56 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 h-screen sticky top-0">
         <div className="p-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🌙</span>
@@ -61,8 +61,8 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      {/* Main content - 独立スクロール */}
+      <main className="flex-1 overflow-y-auto h-screen">
         <Outlet />
       </main>
     </div>
