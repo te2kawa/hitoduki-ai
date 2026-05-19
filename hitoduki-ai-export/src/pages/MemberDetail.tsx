@@ -498,7 +498,37 @@ export default function MemberDetail() {
                 {/* AI推定タイプ */}
                 {(result.inferred_mbti || result.inferred_enneagram_main) && (
                   <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-indigo-800 mb-3">🤖 AI推定タイプ（バイアス補正済み）</h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-indigo-800">🤖 AI推定タイプ（バイアス補正済み）</h3>
+                      <button
+                        onClick={async () => {
+                          const MBTI_OPTS = (await import('../constants/mbti')).MBTI_OPTIONS;
+                          const updates: Record<string, unknown> = {};
+                          if (result.inferred_mbti) {
+                            const opt = MBTI_OPTS.find(o => o.type === result.inferred_mbti);
+                            updates.mbti = { type: result.inferred_mbti, label: opt?.label ?? '', unknown: false };
+                          }
+                          if (result.inferred_enneagram_main) {
+                            const rawScores = result.inferred_enneagram_scores ?? {};
+                            // 9タイプ全て埋める（未返却のタイプは1で補完）
+                            const scores: Record<number, number> = {};
+                            for (let t = 1; t <= 9; t++) {
+                              scores[t] = rawScores[String(t)] ?? rawScores[t] ?? 1;
+                            }
+                            updates.enneagram = { type: result.inferred_enneagram_main, scores, unknown: false };
+                          }
+                          updates.indicatorModes = {
+                            ...(member!.indicatorModes ?? { enneagram: 'unknown', mbti: 'unknown', bigfive: 'unknown' }),
+                            ...(result.inferred_mbti ? { mbti: 'manual' } : {}),
+                            ...(result.inferred_enneagram_main ? { enneagram: 'manual' } : {}),
+                          };
+                          await updateMember(id!, updates);
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        登録タイプに反映
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-2 mb-3">
                       {result.inferred_mbti && (
                         <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-bold">
@@ -517,12 +547,10 @@ export default function MemberDetail() {
                     {result.inferred_enneagram_reason && (
                       <p className="text-xs text-purple-700 mb-2">エニアグラム: {result.inferred_enneagram_reason}</p>
                     )}
-                    {/* エニアグラムスコアバー */}
                     {result.inferred_enneagram_scores && (
                       <div className="mt-2 space-y-1">
                         {Object.entries(result.inferred_enneagram_scores)
-                          .sort(([,a],[,b]) => b - a)
-                          .slice(0, 5)
+                          .sort(([a],[b]) => Number(a) - Number(b))
                           .map(([type, score]) => (
                           <div key={type} className="flex items-center gap-2">
                             <span className="text-xs text-gray-500 w-12">タイプ{type}</span>
@@ -533,7 +561,6 @@ export default function MemberDetail() {
                             <span className="text-xs text-gray-500 w-4">{score}</span>
                           </div>
                         ))}
-                        <p className="text-xs text-gray-400 mt-1">上位5タイプを表示</p>
                       </div>
                     )}
                   </div>
