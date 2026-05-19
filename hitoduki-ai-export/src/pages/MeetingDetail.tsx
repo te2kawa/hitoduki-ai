@@ -77,7 +77,23 @@ export default function MeetingDetail() {
             {advice.facilitation && (
               <div className="bg-white rounded-xl border border-gray-200 p-5">
                 <h2 className="font-semibold text-gray-800 mb-3">🎯 会議進行アドバイス</h2>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{advice.facilitation}</p>
+                <div className="space-y-2">
+                  {advice.facilitation.split('\n').filter(line => line.trim()).map((line, i) => {
+                    const isStep = /^[\d]+[.\)．]/.test(line.trim());
+                    return (
+                      <div key={i} className={`text-sm text-gray-700 ${isStep ? 'flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2' : 'px-1'}`}>
+                        {isStep ? (
+                          <>
+                            <span className="text-indigo-500 font-bold flex-shrink-0">{line.trim().match(/^[\d]+/)?.[0]}.</span>
+                            <span>{line.trim().replace(/^[\d]+[.\)．]\s*/, '')}</span>
+                          </>
+                        ) : (
+                          <span>{line}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

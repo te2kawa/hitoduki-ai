@@ -101,7 +101,7 @@ ${participantsDesc}
   "pre_meeting_advice": [
     {"member_id": "メンバーID", "advice": "この人への事前根回しアドバイス"}
   ],
-  "facilitation": "会議進行の推奨順序と話し方（詳細に）",
+  "facilitation": "会議進行の推奨順序と話し方。ステップごとに改行して番号付きで記述すること（例：\n1. まず〇〇さんに...\n2. 次に...）",
   "keywords": {
     "landmines": ["地雷ワード1", "地雷ワード2"],
     "hooks": ["刺さるキーワード1", "刺さるキーワード2"]
